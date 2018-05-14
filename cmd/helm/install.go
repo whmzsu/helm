@@ -106,28 +106,29 @@ charts in a repository, use 'helm search'.
 `
 
 type installCmd struct {
-	name         string
-	namespace    string
-	valueFiles   valueFiles
-	chartPath    string
-	dryRun       bool
-	disableHooks bool
-	replace      bool
-	verify       bool
-	keyring      string
-	out          io.Writer
-	client       helm.Interface
-	values       []string
-	stringValues []string
-	nameTemplate string
-	version      string
-	timeout      int64
-	wait         bool
-	repoURL      string
-	username     string
-	password     string
-	devel        bool
-	depUp        bool
+	name           string
+	namespace      string
+	valueFiles     valueFiles
+	chartPath      string
+	dryRun         bool
+	disableHooks   bool
+	disableCRDHook bool
+	replace        bool
+	verify         bool
+	keyring        string
+	out            io.Writer
+	client         helm.Interface
+	values         []string
+	stringValues   []string
+	nameTemplate   string
+	version        string
+	timeout        int64
+	wait           bool
+	repoURL        string
+	username       string
+	password       string
+	devel          bool
+	depUp          bool
 
 	certFile string
 	keyFile  string
@@ -190,6 +191,7 @@ func newInstallCmd(c helm.Interface, out io.Writer) *cobra.Command {
 	f.StringVar(&inst.namespace, "namespace", "", "namespace to install the release into. Defaults to the current kube config namespace.")
 	f.BoolVar(&inst.dryRun, "dry-run", false, "simulate an install")
 	f.BoolVar(&inst.disableHooks, "no-hooks", false, "prevent hooks from running during install")
+	f.BoolVar(&inst.disableCRDHook, "no-crd-hook", false, "prevent CRD hooks from running, but run other hooks")
 	f.BoolVar(&inst.replace, "replace", false, "re-use the given name, even if that name is already used. This is unsafe in production")
 	f.StringArrayVar(&inst.values, "set", []string{}, "set values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
 	f.StringArrayVar(&inst.stringValues, "set-string", []string{}, "set STRING values on the command line (can specify multiple or separate values with commas: key1=val1,key2=val2)")
@@ -218,7 +220,7 @@ func (i *installCmd) run() error {
 		i.namespace = defaultNamespace()
 	}
 
-	rawVals, err := vals(i.valueFiles, i.values, i.stringValues)
+	rawVals, err := vals(i.valueFiles, i.values, i.stringValues, i.certFile, i.keyFile, i.caFile)
 	if err != nil {
 		return err
 	}
@@ -273,6 +275,7 @@ func (i *installCmd) run() error {
 		helm.InstallDryRun(i.dryRun),
 		helm.InstallReuseName(i.replace),
 		helm.InstallDisableHooks(i.disableHooks),
+		helm.InstallDisableCRDHook(i.disableCRDHook),
 		helm.InstallTimeout(i.timeout),
 		helm.InstallWait(i.wait))
 	if err != nil {
@@ -287,6 +290,10 @@ func (i *installCmd) run() error {
 
 	// If this is a dry run, we can't display status.
 	if i.dryRun {
+		// This is special casing to avoid breaking backward compatibility:
+		if res.Release.Info.Description != "Dry run complete" {
+			fmt.Fprintf(os.Stdout, "WARNING: %s\n", res.Release.Info.Description)
+		}
 		return nil
 	}
 
@@ -328,7 +335,7 @@ func mergeValues(dest map[string]interface{}, src map[string]interface{}) map[st
 
 // vals merges values from files specified via -f/--values and
 // directly via --set or --set-string, marshaling them to YAML
-func vals(valueFiles valueFiles, values []string, stringValues []string) ([]byte, error) {
+func vals(valueFiles valueFiles, values []string, stringValues []string, CertFile, KeyFile, CAFile string) ([]byte, error) {
 	base := map[string]interface{}{}
 
 	// User specified a values files via -f/--values
@@ -340,7 +347,7 @@ func vals(valueFiles valueFiles, values []string, stringValues []string) ([]byte
 		if strings.TrimSpace(filePath) == "-" {
 			bytes, err = ioutil.ReadAll(os.Stdin)
 		} else {
-			bytes, err = readFile(filePath)
+			bytes, err = readFile(filePath, CertFile, KeyFile, CAFile)
 		}
 
 		if err != nil {
@@ -505,7 +512,7 @@ func checkDependencies(ch *chart.Chart, reqs *chartutil.Requirements) error {
 }
 
 //readFile load a file from the local directory or a remote file with a url.
-func readFile(filePath string) ([]byte, error) {
+func readFile(filePath, CertFile, KeyFile, CAFile string) ([]byte, error) {
 	u, _ := url.Parse(filePath)
 	p := getter.All(settings)
 
@@ -516,7 +523,7 @@ func readFile(filePath string) ([]byte, error) {
 		return ioutil.ReadFile(filePath)
 	}
 
-	getter, err := getterConstructor(filePath, "", "", "")
+	getter, err := getterConstructor(filePath, CertFile, KeyFile, CAFile)
 	if err != nil {
 		return []byte{}, err
 	}
