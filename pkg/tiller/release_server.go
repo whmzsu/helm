@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -138,7 +138,9 @@ func (s *ReleaseServer) reuseValues(req *services.UpdateReleaseRequest, current 
 		}
 
 		// merge new values with current
-		req.Values.Raw = current.Config.Raw + "\n" + req.Values.Raw
+		if current.Config != nil && current.Config.Raw != "" && current.Config.Raw != "{}\n" {
+			req.Values.Raw = current.Config.Raw + "\n" + req.Values.Raw
+		}
 		req.Chart.Values = &chart.Config{Raw: nv}
 
 		// yaml unmarshal and marshal to remove duplicate keys
@@ -190,7 +192,7 @@ func (s *ReleaseServer) uniqName(start string, reuse bool) (string, error) {
 			s.Log("name %s exists but is not in use, reusing name", start)
 			return start, nil
 		} else if reuse {
-			return "", errors.New("cannot re-use a name that is still in use")
+			return "", fmt.Errorf("a released named %s is in use, cannot re-use a name that is still in use", start)
 		}
 
 		return "", fmt.Errorf("a release named %s already exists.\nRun: helm ls --all %s; to check the status of the release\nOr run: helm del --purge %s; to delete it", start, start, start)

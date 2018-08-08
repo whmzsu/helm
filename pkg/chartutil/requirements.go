@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -45,7 +45,7 @@ var (
 type Dependency struct {
 	// Name is the name of the dependency.
 	//
-	// This must mach the name in the dependency's Chart.yaml.
+	// This must match the name in the dependency's Chart.yaml.
 	Name string `json:"name"`
 	// Version is the version (range) of this chart.
 	//

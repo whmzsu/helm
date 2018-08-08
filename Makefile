@@ -2,9 +2,8 @@ DOCKER_REGISTRY   ?= gcr.io
 IMAGE_PREFIX      ?= kubernetes-helm
 SHORT_NAME        ?= tiller
 SHORT_NAME_RUDDER ?= rudder
-TARGETS           ?= darwin/amd64 linux/amd64 linux/386 linux/arm linux/arm64 linux/ppc64le windows/amd64
+TARGETS           ?= darwin/amd64 linux/amd64 linux/386 linux/arm linux/arm64 linux/ppc64le linux/s390x windows/amd64
 DIST_DIRS         = find * -type d -exec
-APP               = helm
 
 # go option
 GO        ?= go
@@ -27,11 +26,12 @@ all: build
 build:
 	GOBIN=$(BINDIR) $(GO) install $(GOFLAGS) -tags '$(TAGS)' -ldflags '$(LDFLAGS)' k8s.io/helm/cmd/...
 
-# usage: make clean build-cross dist APP=helm|tiller VERSION=v2.0.0-alpha.3
+# usage: make clean build-cross dist VERSION=v2.0.0-alpha.3
 .PHONY: build-cross
 build-cross: LDFLAGS += -extldflags "-static"
 build-cross:
-	CGO_ENABLED=0 gox -parallel=3 -output="_dist/{{.OS}}-{{.Arch}}/{{.Dir}}" -osarch='$(TARGETS)' $(GOFLAGS) $(if $(TAGS),-tags '$(TAGS)',) -ldflags '$(LDFLAGS)' k8s.io/helm/cmd/$(APP)
+	CGO_ENABLED=0 gox -parallel=3 -output="_dist/{{.OS}}-{{.Arch}}/{{.Dir}}" -osarch='$(TARGETS)' $(GOFLAGS) $(if $(TAGS),-tags '$(TAGS)',) -ldflags '$(LDFLAGS)' k8s.io/helm/cmd/helm
+	CGO_ENABLED=0 gox -parallel=3 -output="_dist/{{.OS}}-{{.Arch}}/{{.Dir}}" -osarch='$(TARGETS)' $(GOFLAGS) $(if $(TAGS),-tags '$(TAGS)',) -ldflags '$(LDFLAGS)' k8s.io/helm/cmd/tiller
 
 .PHONY: dist
 dist:
@@ -60,6 +60,7 @@ check-docker:
 docker-binary: BINDIR = ./rootfs
 docker-binary: GOFLAGS += -a -installsuffix cgo
 docker-binary:
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -o $(BINDIR)/helm $(GOFLAGS) -tags '$(TAGS)' -ldflags '$(LDFLAGS)' k8s.io/helm/cmd/helm
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -o $(BINDIR)/tiller $(GOFLAGS) -tags '$(TAGS)' -ldflags '$(LDFLAGS)' k8s.io/helm/cmd/tiller
 
 .PHONY: docker-build
