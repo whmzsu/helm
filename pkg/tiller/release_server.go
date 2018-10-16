@@ -28,7 +28,7 @@ import (
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	"k8s.io/client-go/kubernetes"
 
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/hooks"
@@ -83,12 +83,12 @@ var ValidName = regexp.MustCompile("^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])+
 type ReleaseServer struct {
 	ReleaseModule
 	env       *environment.Environment
-	clientset internalclientset.Interface
+	clientset kubernetes.Interface
 	Log       func(string, ...interface{})
 }
 
 // NewReleaseServer creates a new release server.
-func NewReleaseServer(env *environment.Environment, clientset internalclientset.Interface, useRemote bool) *ReleaseServer {
+func NewReleaseServer(env *environment.Environment, clientset kubernetes.Interface, useRemote bool) *ReleaseServer {
 	var releaseModule ReleaseModule
 	if useRemote {
 		releaseModule = &RemoteReleaseModule{}
@@ -139,7 +139,11 @@ func (s *ReleaseServer) reuseValues(req *services.UpdateReleaseRequest, current 
 
 		// merge new values with current
 		if current.Config != nil && current.Config.Raw != "" && current.Config.Raw != "{}\n" {
-			req.Values.Raw = current.Config.Raw + "\n" + req.Values.Raw
+			if req.Values.Raw != "{}\n" {
+				req.Values.Raw = current.Config.Raw + "\n" + req.Values.Raw
+			} else {
+				req.Values.Raw = current.Config.Raw + "\n"
+			}
 		}
 		req.Chart.Values = &chart.Config{Raw: nv}
 
@@ -198,15 +202,28 @@ func (s *ReleaseServer) uniqName(start string, reuse bool) (string, error) {
 		return "", fmt.Errorf("a release named %s already exists.\nRun: helm ls --all %s; to check the status of the release\nOr run: helm del --purge %s; to delete it", start, start, start)
 	}
 
+	moniker := moniker.New()
+	newname, err := s.createUniqName(moniker)
+	if err != nil {
+		return "ERROR", err
+	}
+
+	s.Log("info: Created new release name %s", newname)
+	return newname, nil
+
+}
+
+func (s *ReleaseServer) createUniqName(m moniker.Namer) (string, error) {
 	maxTries := 5
 	for i := 0; i < maxTries; i++ {
-		namer := moniker.New()
-		name := namer.NameSep("-")
+		name := m.NameSep("-")
 		if len(name) > releaseNameMaxLen {
 			name = name[:releaseNameMaxLen]
 		}
-		if _, err := s.env.Releases.Get(name, 1); strings.Contains(err.Error(), "not found") {
-			return name, nil
+		if _, err := s.env.Releases.Get(name, 1); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				return name, nil
+			}
 		}
 		s.Log("info: generated name %s is taken. Searching again.", name)
 	}
